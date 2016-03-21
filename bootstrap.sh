@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
- yum install -y git
+ yum install -y git unzip
 
 # les sources du kernel linux et de glibc
  yum install -y kernel-devel glibc-devel
@@ -27,3 +27,9 @@ cmake .
 make
 # instalation d'un ensemble de commande dont "perf-java-flames"
 bin/create-links-in /usr/bin
+
+
+
+[ -f /tmp/gradle-2.12-all.zip ] ||  wget -O /tmp/gradle-2.12-all.zip https://services.gradle.org/distributions/gradle-2.12-all.zip
+cd /opt
+unzip /tmp/gradle-2.12-all.zip
