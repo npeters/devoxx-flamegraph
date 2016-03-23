@@ -1,0 +1,1071 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="1330" onload="init(evt)" viewBox="0 0 1200 1330" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<defs >
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	.func_g:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	var details, searchbtn, matchedtxt, svg;
+	function init(evt) { 
+		details = document.getElementById("details").firstChild; 
+		searchbtn = document.getElementById("search");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+	}
+
+	// mouse-over for info
+	function s(node) {		// show
+		info = g_to_text(node);
+		details.nodeValue = "Function: " + info;
+	}
+	function c() {			// clear
+		details.nodeValue = ' ';
+	}
+
+	// ctrl-F for search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+	})
+
+	// functions
+	function find_child(parent, name, attr) {
+		var children = parent.childNodes;
+		for (var i=0; i<children.length;i++) {
+			if (children[i].tagName == name)
+				return (attr != undefined) ? children[i].attributes[attr].value : children[i];
+		}
+		return;
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_"+attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_"+attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_"+attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		if (func != null)
+			func = func.replace(/ .*/, "");
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes["width"].value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes["x"].value = parseFloat(r.attributes["x"].value) +3;
+		
+		// Smaller than this size won't fit anything
+		if (w < 2*12*0.59) {
+			t.textContent = "";
+			return;
+		}
+		
+		t.textContent = txt;
+		// Fit in full text width
+		if (/^ *$/.test(txt) || t.getSubStringLength(0, txt.length) < w)
+			return;
+		
+		for (var x=txt.length-2; x>0; x--) {
+			if (t.getSubStringLength(0, x+2) <= w) { 
+				t.textContent = txt.substring(0,x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for(var i=0, c=e.childNodes; i<c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes["x"] != undefined) {
+				orig_save(e, "x");
+				e.attributes["x"].value = (parseFloat(e.attributes["x"].value) - x - 10) * ratio + 10;
+				if(e.tagName == "text") e.attributes["x"].value = find_child(e.parentNode, "rect", "x") + 3;
+			}
+			if (e.attributes["width"] != undefined) {
+				orig_save(e, "width");
+				e.attributes["width"].value = parseFloat(e.attributes["width"].value) * ratio;
+			}
+		}
+		
+		if (e.childNodes == undefined) return;
+		for(var i=0, c=e.childNodes; i<c.length; i++) {
+			zoom_child(c[i], x-10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes["x"] != undefined) {
+				orig_save(e, "x");
+				e.attributes["x"].value = 10;
+			}
+			if (e.attributes["width"] != undefined) {
+				orig_save(e, "width");
+				e.attributes["width"].value = parseInt(svg.width.baseVal.value) - (10*2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for(var i=0, c=e.childNodes; i<c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) { 
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr["width"].value);
+		var xmin = parseFloat(attr["x"].value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr["y"].value);
+		var ratio = (svg.width.baseVal.value - 2*10) / width;
+		
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+		
+		var unzoombtn = document.getElementById("unzoom");
+		unzoombtn.style["opacity"] = "1.0";
+		
+		var el = document.getElementsByTagName("g");
+		for(var i=0;i<el.length;i++){
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a["x"].value);
+			var ew = parseFloat(a["width"].value);
+			// Is it an ancestor
+			if (0 == 0) {
+				var upstack = parseFloat(a["y"].value) > ymin;
+			} else {
+				var upstack = parseFloat(a["y"].value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.style["opacity"] = "0.5";
+					zoom_parent(e);
+					e.onclick = function(e){unzoom(); zoom(this);};
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.style["display"] = "none";
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.style["display"] = "none";
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					e.onclick = function(e){zoom(this);};
+					update_text(e);
+				}
+			}
+		}
+	}
+	function unzoom() {
+		var unzoombtn = document.getElementById("unzoom");
+		unzoombtn.style["opacity"] = "0.0";
+		
+		var el = document.getElementsByTagName("g");
+		for(i=0;i<el.length;i++) {
+			el[i].style["display"] = "block";
+			el[i].style["opacity"] = "1";
+			zoom_reset(el[i]);
+			update_text(el[i]);
+		}
+	}	
+
+	// search
+	function reset_search() {
+		var el = document.getElementsByTagName("rect");
+		for (var i=0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)", "");
+			if (term != null) {
+				search(term)
+			}
+		} else {
+			reset_search();
+			searching = 0;
+			searchbtn.style["opacity"] = "0.1";
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.style["opacity"] = "0.0";
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		var re = new RegExp(term);
+		var el = document.getElementsByTagName("g");
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			if (e.attributes["class"].value != "func_g")
+				continue;
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (rect == null) {
+				// the rect might be wrapped in an anchor
+				// if nameattr href is being used
+				if (rect = find_child(e, "a")) {
+				    rect = find_child(r, "rect");
+				}
+			}
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes["width"].value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes["x"].value);
+				orig_save(rect, "fill");
+				rect.attributes["fill"].value =
+				    "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+
+		searchbtn.style["opacity"] = "1.0";
+		searchbtn.firstChild.nodeValue = "Reset Search"
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+				return a - b;
+			if (a < b || a > b)
+				return a - b;
+			return matches[b] - matches[a];
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.style["opacity"] = "1.0";
+		pct = 100 * count / maxwidth;
+		if (pct == 100)
+			pct = "100"
+		else
+			pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+	function searchover(e) {
+		searchbtn.style["opacity"] = "1.0";
+	}
+	function searchout(e) {
+		if (searching) {
+			searchbtn.style["opacity"] = "1.0";
+		} else {
+			searchbtn.style["opacity"] = "0.1";
+		}
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="1330.0" fill="url(#background)"  />
+<text text-anchor="middle" x="600.00" y="24" font-size="17" font-family="Verdana" fill="rgb(0,0,0)"  >Flame Graph</text>
+<text text-anchor="" x="10.00" y="1313" font-size="12" font-family="Verdana" fill="rgb(0,0,0)" id="details" > </text>
+<text text-anchor="" x="10.00" y="24" font-size="12" font-family="Verdana" fill="rgb(0,0,0)" id="unzoom" onclick="unzoom()" style="opacity:0.0;cursor:pointer" >Reset Zoom</text>
+<text text-anchor="" x="1090.00" y="24" font-size="12" font-family="Verdana" fill="rgb(0,0,0)" id="search" onmouseover="searchover()" onmouseout="searchout()" onclick="search_prompt()" style="opacity:0.1;cursor:pointer" >Search</text>
+<text text-anchor="" x="1090.00" y="1313" font-size="12" font-family="Verdana" fill="rgb(0,0,0)" id="matched" > </text>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (5,089 samples, 85.89%)</title><rect x="58.4" y="193" width="1013.5" height="15.0" fill="rgb(109,254,109)" rx="2" ry="2" />
+<text text-anchor="" x="61.39" y="203.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegraph/web/FiboController:::fibonacci</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter (593 samples, 10.01%)</title><rect x="1071.9" y="593" width="118.1" height="15.0" fill="rgb(102,247,102)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="603.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/cat..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (592 samples, 9.99%)</title><rect x="1072.1" y="193" width="117.9" height="15.0" fill="rgb(105,251,105)" rx="2" ry="2" />
+<text text-anchor="" x="1075.10" y="203.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegr..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter (593 samples, 10.01%)</title><rect x="1071.9" y="881" width="118.1" height="15.0" fill="rgb(57,207,57)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="891.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/cat..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/OncePerRequestFilter:::doFilter (5,292 samples, 89.32%)</title><rect x="18.0" y="785" width="1053.9" height="15.0" fill="rgb(80,228,80)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="795.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/web/filter/OncePerRequestFilter:::doFilter</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/connector/CoyoteAdapter:::service (5,292 samples, 89.32%)</title><rect x="18.0" y="1009" width="1053.9" height="15.0" fill="rgb(67,215,67)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="1019.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/catalina/connector/CoyoteAdapter:::service</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/HiddenHttpMethodFilter:::doFilterInternal (5,292 samples, 89.32%)</title><rect x="18.0" y="817" width="1053.9" height="15.0" fill="rgb(71,219,71)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="827.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/web/filter/HiddenHttpMethodFilter:::doFilterInternal</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/servlet/mvc/method/annotation/RequestMappingHandlerAdapter:::invokeHandlerMethod (5,292 samples, 89.32%)</title><rect x="18.0" y="481" width="1053.9" height="15.0" fill="rgb(54,203,54)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="491.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/web/servlet/mvc/method/annotation/RequestMappingHandlerAdapter:::invokeHandlerMethod</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/OncePerRequestFilter:::doFilter (5,292 samples, 89.32%)</title><rect x="18.0" y="641" width="1053.9" height="15.0" fill="rgb(76,224,76)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="651.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/web/filter/OncePerRequestFilter:::doFilter</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>call_softirq (1 samples, 0.02%)</title><rect x="1185.0" y="49" width="0.2" height="15.0" fill="rgb(241,110,110)" rx="2" ry="2" />
+<text text-anchor="" x="1188.02" y="59.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (593 samples, 10.01%)</title><rect x="1071.9" y="401" width="118.1" height="15.0" fill="rgb(87,234,87)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="411.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegr..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter (593 samples, 10.01%)</title><rect x="1071.9" y="785" width="118.1" height="15.0" fill="rgb(58,207,58)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="795.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/cat..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter (5,292 samples, 89.32%)</title><rect x="18.0" y="801" width="1053.9" height="15.0" fill="rgb(109,254,109)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="811.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>call_stub (5,885 samples, 99.32%)</title><rect x="18.0" y="1137" width="1172.0" height="15.0" fill="rgb(243,113,113)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="1147.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >call_stub</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (593 samples, 10.01%)</title><rect x="1071.9" y="209" width="118.1" height="15.0" fill="rgb(99,245,99)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="219.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegr..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>smp_apic_timer_interrupt (16 samples, 0.27%)</title><rect x="850.0" y="129" width="3.2" height="15.0" fill="rgb(237,104,104)" rx="2" ry="2" />
+<text text-anchor="" x="853.04" y="139.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (593 samples, 10.01%)</title><rect x="1071.9" y="353" width="118.1" height="15.0" fill="rgb(58,207,58)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="363.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegr..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (22 samples, 0.37%)</title><rect x="1067.5" y="113" width="4.4" height="15.0" fill="rgb(100,246,100)" rx="2" ry="2" />
+<text text-anchor="" x="1070.52" y="123.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>call_softirq (14 samples, 0.24%)</title><rect x="499.1" y="97" width="2.8" height="15.0" fill="rgb(250,123,123)" rx="2" ry="2" />
+<text text-anchor="" x="502.13" y="107.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (593 samples, 10.01%)</title><rect x="1071.9" y="225" width="118.1" height="15.0" fill="rgb(52,202,52)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="235.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegr..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>apic_timer_interrupt (2 samples, 0.03%)</title><rect x="1067.1" y="113" width="0.4" height="15.0" fill="rgb(233,98,98)" rx="2" ry="2" />
+<text text-anchor="" x="1070.12" y="123.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>retint_careful (40 samples, 0.68%)</title><rect x="10.0" y="1233" width="8.0" height="15.0" fill="rgb(233,98,98)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="1243.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/servlet/DispatcherServlet:::doDispatch (5,292 samples, 89.32%)</title><rect x="18.0" y="513" width="1053.9" height="15.0" fill="rgb(54,203,54)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="523.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/web/servlet/DispatcherServlet:::doDispatch</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>Interpreter (5,885 samples, 99.32%)</title><rect x="18.0" y="1105" width="1172.0" height="15.0" fill="rgb(210,65,65)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="1115.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >Interpreter</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter (593 samples, 10.01%)</title><rect x="1071.9" y="641" width="118.1" height="15.0" fill="rgb(95,241,95)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="651.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/cat..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>apic_timer_interrupt (3 samples, 0.05%)</title><rect x="1161.9" y="129" width="0.6" height="15.0" fill="rgb(201,51,51)" rx="2" ry="2" />
+<text text-anchor="" x="1164.92" y="139.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (593 samples, 10.01%)</title><rect x="1071.9" y="241" width="118.1" height="15.0" fill="rgb(52,202,52)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="251.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegr..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>call_softirq (16 samples, 0.27%)</title><rect x="850.0" y="81" width="3.2" height="15.0" fill="rgb(226,88,88)" rx="2" ry="2" />
+<text text-anchor="" x="853.04" y="91.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (5,284 samples, 89.18%)</title><rect x="19.6" y="241" width="1052.3" height="15.0" fill="rgb(68,217,68)" rx="2" ry="2" />
+<text text-anchor="" x="22.56" y="251.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegraph/web/FiboController:::fibonacci</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>[unknown] (5,885 samples, 99.32%)</title><rect x="18.0" y="1233" width="1172.0" height="15.0" fill="rgb(218,76,76)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="1243.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >[unknown]</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (5,292 samples, 89.32%)</title><rect x="18.0" y="337" width="1053.9" height="15.0" fill="rgb(81,228,81)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="347.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegraph/web/FiboController:::fibonacci</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/servlet/FrameworkServlet:::service (593 samples, 10.01%)</title><rect x="1071.9" y="545" width="118.1" height="15.0" fill="rgb(86,233,86)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="555.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (5,292 samples, 89.32%)</title><rect x="18.0" y="305" width="1053.9" height="15.0" fill="rgb(87,234,87)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="315.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegraph/web/FiboController:::fibonacci</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter (593 samples, 10.01%)</title><rect x="1071.9" y="737" width="118.1" height="15.0" fill="rgb(56,205,56)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="747.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/cat..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>__do_softirq (1 samples, 0.02%)</title><rect x="1185.0" y="33" width="0.2" height="15.0" fill="rgb(223,83,83)" rx="2" ry="2" />
+<text text-anchor="" x="1188.02" y="43.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/OncePerRequestFilter:::doFilter (5,292 samples, 89.32%)</title><rect x="18.0" y="689" width="1053.9" height="15.0" fill="rgb(86,233,86)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="699.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/web/filter/OncePerRequestFilter:::doFilter</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (5,233 samples, 88.32%)</title><rect x="29.7" y="209" width="1042.2" height="15.0" fill="rgb(84,231,84)" rx="2" ry="2" />
+<text text-anchor="" x="32.72" y="219.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegraph/web/FiboController:::fibonacci</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>do_softirq (2 samples, 0.03%)</title><rect x="1067.1" y="65" width="0.4" height="15.0" fill="rgb(230,95,95)" rx="2" ry="2" />
+<text text-anchor="" x="1070.12" y="75.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>start_thread (5,885 samples, 99.32%)</title><rect x="18.0" y="1249" width="1172.0" height="15.0" fill="rgb(245,115,115)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="1259.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >start_thread</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>[unknown] (5,885 samples, 99.32%)</title><rect x="18.0" y="1201" width="1172.0" height="15.0" fill="rgb(217,75,75)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="1211.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >[unknown]</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>__do_softirq (3 samples, 0.05%)</title><rect x="1161.9" y="49" width="0.6" height="15.0" fill="rgb(232,97,97)" rx="2" ry="2" />
+<text text-anchor="" x="1164.92" y="59.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter (5,292 samples, 89.32%)</title><rect x="18.0" y="753" width="1053.9" height="15.0" fill="rgb(95,241,95)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="763.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>all (5,925 samples, 100%)</title><rect x="10.0" y="1281" width="1180.0" height="15.0" fill="rgb(249,122,122)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="1291.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/OncePerRequestFilter:::doFilter (593 samples, 10.01%)</title><rect x="1071.9" y="625" width="118.1" height="15.0" fill="rgb(95,241,95)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="635.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>apic_timer_interrupt (16 samples, 0.27%)</title><rect x="850.0" y="145" width="3.2" height="15.0" fill="rgb(220,79,79)" rx="2" ry="2" />
+<text text-anchor="" x="853.04" y="155.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>apic_timer_interrupt (11 samples, 0.19%)</title><rect x="1027.9" y="129" width="2.2" height="15.0" fill="rgb(254,129,129)" rx="2" ry="2" />
+<text text-anchor="" x="1030.89" y="139.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (593 samples, 10.01%)</title><rect x="1071.9" y="257" width="118.1" height="15.0" fill="rgb(74,222,74)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="267.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegr..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/OncePerRequestFilter:::doFilter (593 samples, 10.01%)</title><rect x="1071.9" y="673" width="118.1" height="15.0" fill="rgb(96,242,96)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="683.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sun/reflect/GeneratedMethodAccessor65:::invoke (5,292 samples, 89.32%)</title><rect x="18.0" y="449" width="1053.9" height="15.0" fill="rgb(104,249,104)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="459.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sun/reflect/GeneratedMethodAccessor65:::invoke</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (593 samples, 10.01%)</title><rect x="1071.9" y="273" width="118.1" height="15.0" fill="rgb(61,210,61)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="283.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegr..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/CharacterEncodingFilter:::doFilterInternal (593 samples, 10.01%)</title><rect x="1071.9" y="849" width="118.1" height="15.0" fill="rgb(51,201,51)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="859.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/servlet/mvc/method/annotation/RequestMappingHandlerAdapter:::invokeHandlerMethod (593 samples, 10.01%)</title><rect x="1071.9" y="465" width="118.1" height="15.0" fill="rgb(74,222,74)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="475.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>javax/servlet/http/HttpServlet:::service (593 samples, 10.01%)</title><rect x="1071.9" y="529" width="118.1" height="15.0" fill="rgb(104,250,104)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="539.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >javax/servlet/..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/authenticator/AuthenticatorBase:::invoke (5,292 samples, 89.32%)</title><rect x="18.0" y="977" width="1053.9" height="15.0" fill="rgb(80,228,80)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="987.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/catalina/authenticator/AuthenticatorBase:::invoke</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>do_softirq (14 samples, 0.24%)</title><rect x="499.1" y="113" width="2.8" height="15.0" fill="rgb(246,117,117)" rx="2" ry="2" />
+<text text-anchor="" x="502.13" y="123.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (576 samples, 9.72%)</title><rect x="1075.3" y="177" width="114.7" height="15.0" fill="rgb(57,206,57)" rx="2" ry="2" />
+<text text-anchor="" x="1078.29" y="187.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegr..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (335 samples, 5.65%)</title><rect x="1123.3" y="145" width="66.7" height="15.0" fill="rgb(83,230,83)" rx="2" ry="2" />
+<text text-anchor="" x="1126.28" y="155.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/HttpPutFormContentFilter:::doFilterInternal (593 samples, 10.01%)</title><rect x="1071.9" y="753" width="118.1" height="15.0" fill="rgb(68,217,68)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="763.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>__do_softirq (14 samples, 0.24%)</title><rect x="499.1" y="81" width="2.8" height="15.0" fill="rgb(223,84,84)" rx="2" ry="2" />
+<text text-anchor="" x="502.13" y="91.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/servlet/DispatcherServlet:::doService (5,292 samples, 89.32%)</title><rect x="18.0" y="529" width="1053.9" height="15.0" fill="rgb(52,202,52)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="539.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/web/servlet/DispatcherServlet:::doService</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/tomcat/util/net/NioEndpoint$SocketProcessor:::doRun (5,292 samples, 89.32%)</title><rect x="18.0" y="1057" width="1053.9" height="15.0" fill="rgb(72,220,72)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="1067.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/tomcat/util/net/NioEndpoint$SocketProcessor:::doRun</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/HiddenHttpMethodFilter:::doFilterInternal (593 samples, 10.01%)</title><rect x="1071.9" y="801" width="118.1" height="15.0" fill="rgb(84,231,84)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="811.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/OncePerRequestFilter:::doFilter (593 samples, 10.01%)</title><rect x="1071.9" y="913" width="118.1" height="15.0" fill="rgb(97,243,97)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="923.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (593 samples, 10.01%)</title><rect x="1071.9" y="305" width="118.1" height="15.0" fill="rgb(56,205,56)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="315.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegr..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (2,862 samples, 48.30%)</title><rect x="501.9" y="161" width="570.0" height="15.0" fill="rgb(94,240,94)" rx="2" ry="2" />
+<text text-anchor="" x="504.92" y="171.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegraph/web/FiboController:::fibonacci</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/StandardHostValve:::invoke (593 samples, 10.01%)</title><rect x="1071.9" y="977" width="118.1" height="15.0" fill="rgb(63,212,63)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="987.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/cat..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/OncePerRequestFilter:::doFilter (593 samples, 10.01%)</title><rect x="1071.9" y="721" width="118.1" height="15.0" fill="rgb(62,211,62)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="731.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>do_softirq (11 samples, 0.19%)</title><rect x="1027.9" y="81" width="2.2" height="15.0" fill="rgb(213,70,70)" rx="2" ry="2" />
+<text text-anchor="" x="1030.89" y="91.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (593 samples, 10.01%)</title><rect x="1071.9" y="289" width="118.1" height="15.0" fill="rgb(87,234,87)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="299.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegr..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (509 samples, 8.59%)</title><rect x="1088.6" y="161" width="101.4" height="15.0" fill="rgb(85,232,85)" rx="2" ry="2" />
+<text text-anchor="" x="1091.63" y="171.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flame..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>__do_softirq (16 samples, 0.27%)</title><rect x="850.0" y="65" width="3.2" height="15.0" fill="rgb(211,67,67)" rx="2" ry="2" />
+<text text-anchor="" x="853.04" y="75.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>java/util/concurrent/ThreadPoolExecutor:::runWorker (5,885 samples, 99.32%)</title><rect x="18.0" y="1073" width="1172.0" height="15.0" fill="rgb(78,225,78)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="1083.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >java/util/concurrent/ThreadPoolExecutor:::runWorker</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/servlet/FrameworkServlet:::service (5,292 samples, 89.32%)</title><rect x="18.0" y="561" width="1053.9" height="15.0" fill="rgb(92,238,92)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="571.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/web/servlet/FrameworkServlet:::service</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>call_softirq (3 samples, 0.05%)</title><rect x="1161.9" y="65" width="0.6" height="15.0" fill="rgb(236,103,103)" rx="2" ry="2" />
+<text text-anchor="" x="1164.92" y="75.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>do_softirq (3 samples, 0.05%)</title><rect x="185.5" y="129" width="0.6" height="15.0" fill="rgb(226,88,88)" rx="2" ry="2" />
+<text text-anchor="" x="188.46" y="139.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/boot/actuate/autoconfigure/MetricsFilter:::doFilterInternal (593 samples, 10.01%)</title><rect x="1071.9" y="897" width="118.1" height="15.0" fill="rgb(57,207,57)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="907.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/OncePerRequestFilter:::doFilter (593 samples, 10.01%)</title><rect x="1071.9" y="865" width="118.1" height="15.0" fill="rgb(95,241,95)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="875.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (5,292 samples, 89.32%)</title><rect x="18.0" y="369" width="1053.9" height="15.0" fill="rgb(73,221,73)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="379.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegraph/web/FiboController:::fibonacci</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter (593 samples, 10.01%)</title><rect x="1071.9" y="689" width="118.1" height="15.0" fill="rgb(78,226,78)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="699.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/cat..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (5,289 samples, 89.27%)</title><rect x="18.6" y="257" width="1053.3" height="15.0" fill="rgb(70,218,70)" rx="2" ry="2" />
+<text text-anchor="" x="21.56" y="267.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegraph/web/FiboController:::fibonacci</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>call_softirq (3 samples, 0.05%)</title><rect x="185.5" y="113" width="0.6" height="15.0" fill="rgb(242,112,112)" rx="2" ry="2" />
+<text text-anchor="" x="188.46" y="123.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/OncePerRequestFilter:::doFilter (593 samples, 10.01%)</title><rect x="1071.9" y="769" width="118.1" height="15.0" fill="rgb(52,202,52)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="779.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>call_softirq (11 samples, 0.19%)</title><rect x="1027.9" y="65" width="2.2" height="15.0" fill="rgb(207,60,60)" rx="2" ry="2" />
+<text text-anchor="" x="1030.89" y="75.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>Interpreter (5,885 samples, 99.32%)</title><rect x="18.0" y="1121" width="1172.0" height="15.0" fill="rgb(208,61,61)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="1131.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >Interpreter</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/boot/actuate/trace/WebRequestTraceFilter:::doFilterInternal (593 samples, 10.01%)</title><rect x="1071.9" y="657" width="118.1" height="15.0" fill="rgb(53,203,53)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="667.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter (5,292 samples, 89.32%)</title><rect x="18.0" y="577" width="1053.9" height="15.0" fill="rgb(59,208,59)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="587.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/tomcat/websocket/server/WsFilter:::doFilter (593 samples, 10.01%)</title><rect x="1071.9" y="577" width="118.1" height="15.0" fill="rgb(104,249,104)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="587.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/tom..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/method/support/InvocableHandlerMethod:::doInvoke (5,292 samples, 89.32%)</title><rect x="18.0" y="465" width="1053.9" height="15.0" fill="rgb(104,250,104)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="475.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/web/method/support/InvocableHandlerMethod:::doInvoke</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>[unknown] (5,885 samples, 99.32%)</title><rect x="18.0" y="1185" width="1172.0" height="15.0" fill="rgb(240,109,109)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="1195.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >[unknown]</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>apic_timer_interrupt (14 samples, 0.24%)</title><rect x="499.1" y="161" width="2.8" height="15.0" fill="rgb(200,51,51)" rx="2" ry="2" />
+<text text-anchor="" x="502.13" y="171.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>smp_apic_timer_interrupt (14 samples, 0.24%)</title><rect x="499.1" y="145" width="2.8" height="15.0" fill="rgb(215,71,71)" rx="2" ry="2" />
+<text text-anchor="" x="502.13" y="155.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>java (5,925 samples, 100.00%)</title><rect x="10.0" y="1265" width="1180.0" height="15.0" fill="rgb(252,126,126)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="1275.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >java</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>irq_exit (2 samples, 0.03%)</title><rect x="1067.1" y="81" width="0.4" height="15.0" fill="rgb(221,81,81)" rx="2" ry="2" />
+<text text-anchor="" x="1070.12" y="91.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/boot/actuate/trace/WebRequestTraceFilter:::doFilterInternal (5,292 samples, 89.32%)</title><rect x="18.0" y="673" width="1053.9" height="15.0" fill="rgb(64,213,64)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="683.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/boot/actuate/trace/WebRequestTraceFilter:::doFilterInternal</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/servlet/mvc/method/AbstractHandlerMethodAdapter:::handle (593 samples, 10.01%)</title><rect x="1071.9" y="481" width="118.1" height="15.0" fill="rgb(66,215,66)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="491.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>smp_apic_timer_interrupt (3 samples, 0.05%)</title><rect x="185.5" y="161" width="0.6" height="15.0" fill="rgb(227,89,89)" rx="2" ry="2" />
+<text text-anchor="" x="188.46" y="171.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/OncePerRequestFilter:::doFilter (5,292 samples, 89.32%)</title><rect x="18.0" y="929" width="1053.9" height="15.0" fill="rgb(67,216,67)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="939.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/web/filter/OncePerRequestFilter:::doFilter</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/connector/CoyoteAdapter:::service (593 samples, 10.01%)</title><rect x="1071.9" y="993" width="118.1" height="15.0" fill="rgb(92,239,92)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="1003.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/cat..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>[unknown] (5,885 samples, 99.32%)</title><rect x="18.0" y="1217" width="1172.0" height="15.0" fill="rgb(214,70,70)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="1227.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >[unknown]</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter (593 samples, 10.01%)</title><rect x="1071.9" y="929" width="118.1" height="15.0" fill="rgb(93,240,93)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="939.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/cat..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter (593 samples, 10.01%)</title><rect x="1071.9" y="833" width="118.1" height="15.0" fill="rgb(61,210,61)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="843.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/cat..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/boot/actuate/autoconfigure/EndpointWebMvcAutoConfiguration$ApplicationContextHeaderFilter:::doFilterInternal (5,292 samples, 89.32%)</title><rect x="18.0" y="625" width="1053.9" height="15.0" fill="rgb(65,214,65)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="635.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/boot/actuate/autoconfigure/EndpointWebMvcAutoConfiguration$ApplicationContextHeaderFilter:::doFilterInternal</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter (5,292 samples, 89.32%)</title><rect x="18.0" y="849" width="1053.9" height="15.0" fill="rgb(90,236,90)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="859.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>do_softirq (1 samples, 0.02%)</title><rect x="1185.0" y="65" width="0.2" height="15.0" fill="rgb(236,103,103)" rx="2" ry="2" />
+<text text-anchor="" x="1188.02" y="75.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (593 samples, 10.01%)</title><rect x="1071.9" y="385" width="118.1" height="15.0" fill="rgb(80,227,80)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="395.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegr..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/OncePerRequestFilter:::doFilter (5,292 samples, 89.32%)</title><rect x="18.0" y="737" width="1053.9" height="15.0" fill="rgb(50,200,50)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="747.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/web/filter/OncePerRequestFilter:::doFilter</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>do_softirq (3 samples, 0.05%)</title><rect x="1161.9" y="81" width="0.6" height="15.0" fill="rgb(245,116,116)" rx="2" ry="2" />
+<text text-anchor="" x="1164.92" y="91.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (593 samples, 10.01%)</title><rect x="1071.9" y="369" width="118.1" height="15.0" fill="rgb(72,220,72)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="379.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegr..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>__do_softirq (2 samples, 0.03%)</title><rect x="1067.1" y="33" width="0.4" height="15.0" fill="rgb(214,70,70)" rx="2" ry="2" />
+<text text-anchor="" x="1070.12" y="43.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (5,292 samples, 89.32%)</title><rect x="18.0" y="385" width="1053.9" height="15.0" fill="rgb(66,214,66)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="395.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegraph/web/FiboController:::fibonacci</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>apic_timer_interrupt (3 samples, 0.05%)</title><rect x="185.5" y="177" width="0.6" height="15.0" fill="rgb(237,104,104)" rx="2" ry="2" />
+<text text-anchor="" x="188.46" y="187.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>[unknown] (5,885 samples, 99.32%)</title><rect x="18.0" y="1169" width="1172.0" height="15.0" fill="rgb(229,92,92)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="1179.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >[unknown]</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>__do_softirq (11 samples, 0.19%)</title><rect x="1027.9" y="49" width="2.2" height="15.0" fill="rgb(245,116,116)" rx="2" ry="2" />
+<text text-anchor="" x="1030.89" y="59.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/StandardHostValve:::invoke (5,292 samples, 89.32%)</title><rect x="18.0" y="993" width="1053.9" height="15.0" fill="rgb(99,245,99)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="1003.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/catalina/core/StandardHostValve:::invoke</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/servlet/DispatcherServlet:::doDispatch (593 samples, 10.01%)</title><rect x="1071.9" y="497" width="118.1" height="15.0" fill="rgb(67,215,67)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="507.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>apic_timer_interrupt (1 samples, 0.02%)</title><rect x="1185.0" y="113" width="0.2" height="15.0" fill="rgb(246,117,117)" rx="2" ry="2" />
+<text text-anchor="" x="1188.02" y="123.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/StandardWrapperValve:::invoke (593 samples, 10.01%)</title><rect x="1071.9" y="945" width="118.1" height="15.0" fill="rgb(98,244,98)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="955.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/cat..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter (5,292 samples, 89.32%)</title><rect x="18.0" y="657" width="1053.9" height="15.0" fill="rgb(64,213,64)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="667.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/coyote/AbstractProtocol$AbstractConnectionHandler:::process (5,292 samples, 89.32%)</title><rect x="18.0" y="1041" width="1053.9" height="15.0" fill="rgb(67,215,67)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="1051.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/coyote/AbstractProtocol$AbstractConnectionHandler:::process</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>irq_exit (3 samples, 0.05%)</title><rect x="1161.9" y="97" width="0.6" height="15.0" fill="rgb(235,100,100)" rx="2" ry="2" />
+<text text-anchor="" x="1164.92" y="107.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/tomcat/util/net/NioEndpoint$SocketProcessor:::doRun (593 samples, 10.01%)</title><rect x="1071.9" y="1041" width="118.1" height="15.0" fill="rgb(60,209,60)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="1051.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/tom..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/HttpPutFormContentFilter:::doFilterInternal (5,292 samples, 89.32%)</title><rect x="18.0" y="769" width="1053.9" height="15.0" fill="rgb(91,237,91)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="779.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/web/filter/HttpPutFormContentFilter:::doFilterInternal</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>__schedule (40 samples, 0.68%)</title><rect x="10.0" y="1201" width="8.0" height="15.0" fill="rgb(250,123,123)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="1211.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (5,272 samples, 88.98%)</title><rect x="21.9" y="225" width="1050.0" height="15.0" fill="rgb(59,209,59)" rx="2" ry="2" />
+<text text-anchor="" x="24.95" y="235.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegraph/web/FiboController:::fibonacci</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter (5,292 samples, 89.32%)</title><rect x="18.0" y="609" width="1053.9" height="15.0" fill="rgb(105,251,105)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="619.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/OncePerRequestFilter:::doFilter (5,292 samples, 89.32%)</title><rect x="18.0" y="833" width="1053.9" height="15.0" fill="rgb(69,217,69)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="843.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/web/filter/OncePerRequestFilter:::doFilter</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (2 samples, 0.03%)</title><rect x="1189.6" y="97" width="0.4" height="15.0" fill="rgb(100,245,100)" rx="2" ry="2" />
+<text text-anchor="" x="1192.60" y="107.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>smp_apic_timer_interrupt (11 samples, 0.19%)</title><rect x="1027.9" y="113" width="2.2" height="15.0" fill="rgb(248,120,120)" rx="2" ry="2" />
+<text text-anchor="" x="1030.89" y="123.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/coyote/http11/AbstractHttp11Processor:::process (5,292 samples, 89.32%)</title><rect x="18.0" y="1025" width="1053.9" height="15.0" fill="rgb(81,229,81)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="1035.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/coyote/http11/AbstractHttp11Processor:::process</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/RequestContextFilter:::doFilterInternal (5,292 samples, 89.32%)</title><rect x="18.0" y="721" width="1053.9" height="15.0" fill="rgb(96,242,96)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="731.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/web/filter/RequestContextFilter:::doFilterInternal</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (593 samples, 10.01%)</title><rect x="1071.9" y="321" width="118.1" height="15.0" fill="rgb(87,234,87)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="331.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegr..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (4,448 samples, 75.07%)</title><rect x="186.1" y="177" width="885.8" height="15.0" fill="rgb(82,229,82)" rx="2" ry="2" />
+<text text-anchor="" x="189.05" y="187.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegraph/web/FiboController:::fibonacci</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>do_softirq (16 samples, 0.27%)</title><rect x="850.0" y="97" width="3.2" height="15.0" fill="rgb(226,88,88)" rx="2" ry="2" />
+<text text-anchor="" x="853.04" y="107.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/boot/actuate/autoconfigure/EndpointWebMvcAutoConfiguration$ApplicationContextHeaderFilter:::doFilterInternal (593 samples, 10.01%)</title><rect x="1071.9" y="609" width="118.1" height="15.0" fill="rgb(55,204,55)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="619.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>irq_exit (14 samples, 0.24%)</title><rect x="499.1" y="129" width="2.8" height="15.0" fill="rgb(250,124,124)" rx="2" ry="2" />
+<text text-anchor="" x="502.13" y="139.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/RequestContextFilter:::doFilterInternal (593 samples, 10.01%)</title><rect x="1071.9" y="705" width="118.1" height="15.0" fill="rgb(56,206,56)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="715.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (5,292 samples, 89.32%)</title><rect x="18.0" y="321" width="1053.9" height="15.0" fill="rgb(89,236,89)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="331.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegraph/web/FiboController:::fibonacci</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>schedule_user (40 samples, 0.68%)</title><rect x="10.0" y="1217" width="8.0" height="15.0" fill="rgb(203,55,55)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="1227.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (5,291 samples, 89.30%)</title><rect x="18.2" y="273" width="1053.7" height="15.0" fill="rgb(81,228,81)" rx="2" ry="2" />
+<text text-anchor="" x="21.17" y="283.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegraph/web/FiboController:::fibonacci</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (24 samples, 0.41%)</title><rect x="1185.2" y="113" width="4.8" height="15.0" fill="rgb(86,233,86)" rx="2" ry="2" />
+<text text-anchor="" x="1188.22" y="123.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (5,292 samples, 89.32%)</title><rect x="18.0" y="417" width="1053.9" height="15.0" fill="rgb(51,201,51)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="427.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegraph/web/FiboController:::fibonacci</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/OncePerRequestFilter:::doFilter (593 samples, 10.01%)</title><rect x="1071.9" y="817" width="118.1" height="15.0" fill="rgb(70,219,70)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="827.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/tomcat/util/net/NioEndpoint$SocketProcessor:::run (593 samples, 10.01%)</title><rect x="1071.9" y="1057" width="118.1" height="15.0" fill="rgb(67,215,67)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="1067.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/tom..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>smp_apic_timer_interrupt (3 samples, 0.05%)</title><rect x="1161.9" y="113" width="0.6" height="15.0" fill="rgb(230,94,94)" rx="2" ry="2" />
+<text text-anchor="" x="1164.92" y="123.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>irq_exit (11 samples, 0.19%)</title><rect x="1027.9" y="97" width="2.2" height="15.0" fill="rgb(230,94,94)" rx="2" ry="2" />
+<text text-anchor="" x="1030.89" y="107.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/OncePerRequestFilter:::doFilter (5,292 samples, 89.32%)</title><rect x="18.0" y="881" width="1053.9" height="15.0" fill="rgb(56,205,56)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="891.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/web/filter/OncePerRequestFilter:::doFilter</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>smp_apic_timer_interrupt (1 samples, 0.02%)</title><rect x="1185.0" y="97" width="0.2" height="15.0" fill="rgb(212,68,68)" rx="2" ry="2" />
+<text text-anchor="" x="1188.02" y="107.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (593 samples, 10.01%)</title><rect x="1071.9" y="337" width="118.1" height="15.0" fill="rgb(100,246,100)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="347.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegr..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (5,292 samples, 89.32%)</title><rect x="18.0" y="401" width="1053.9" height="15.0" fill="rgb(66,215,66)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="411.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegraph/web/FiboController:::fibonacci</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>finish_task_switch (40 samples, 0.68%)</title><rect x="10.0" y="1185" width="8.0" height="15.0" fill="rgb(215,72,72)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="1195.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/servlet/DispatcherServlet:::doService (593 samples, 10.01%)</title><rect x="1071.9" y="513" width="118.1" height="15.0" fill="rgb(89,235,89)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="523.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (2 samples, 0.03%)</title><rect x="1071.5" y="97" width="0.4" height="15.0" fill="rgb(57,206,57)" rx="2" ry="2" />
+<text text-anchor="" x="1074.50" y="107.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/authenticator/AuthenticatorBase:::invoke (593 samples, 10.01%)</title><rect x="1071.9" y="961" width="118.1" height="15.0" fill="rgb(51,200,51)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="971.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/cat..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/filter/CharacterEncodingFilter:::doFilterInternal (5,292 samples, 89.32%)</title><rect x="18.0" y="865" width="1053.9" height="15.0" fill="rgb(104,250,104)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="875.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/web/filter/CharacterEncodingFilter:::doFilterInternal</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/coyote/http11/AbstractHttp11Processor:::process (593 samples, 10.01%)</title><rect x="1071.9" y="1009" width="118.1" height="15.0" fill="rgb(67,215,67)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="1019.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/coy..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>call_softirq (2 samples, 0.03%)</title><rect x="1067.1" y="49" width="0.4" height="15.0" fill="rgb(203,55,55)" rx="2" ry="2" />
+<text text-anchor="" x="1070.12" y="59.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/method/support/InvocableHandlerMethod:::doInvoke (593 samples, 10.01%)</title><rect x="1071.9" y="449" width="118.1" height="15.0" fill="rgb(71,219,71)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="459.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springfram..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/StandardWrapperValve:::invoke (5,292 samples, 89.32%)</title><rect x="18.0" y="961" width="1053.9" height="15.0" fill="rgb(106,251,106)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="971.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/catalina/core/StandardWrapperValve:::invoke</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sun/reflect/GeneratedMethodAccessor65:::invoke (593 samples, 10.01%)</title><rect x="1071.9" y="433" width="118.1" height="15.0" fill="rgb(58,207,58)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="443.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sun/reflect/Ge..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (5,292 samples, 89.32%)</title><rect x="18.0" y="433" width="1053.9" height="15.0" fill="rgb(52,202,52)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="443.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegraph/web/FiboController:::fibonacci</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter (5,292 samples, 89.32%)</title><rect x="18.0" y="897" width="1053.9" height="15.0" fill="rgb(98,244,98)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="907.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter (5,292 samples, 89.32%)</title><rect x="18.0" y="945" width="1053.9" height="15.0" fill="rgb(76,224,76)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="955.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>[unknown] (5,885 samples, 99.32%)</title><rect x="18.0" y="1153" width="1172.0" height="15.0" fill="rgb(243,113,113)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="1163.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >[unknown]</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (40 samples, 0.68%)</title><rect x="10.0" y="1249" width="8.0" height="15.0" fill="rgb(103,248,103)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="1259.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/boot/actuate/autoconfigure/MetricsFilter:::doFilterInternal (5,292 samples, 89.32%)</title><rect x="18.0" y="913" width="1053.9" height="15.0" fill="rgb(67,215,67)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="923.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/boot/actuate/autoconfigure/MetricsFilter:::doFilterInternal</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/coyote/AbstractProtocol$AbstractConnectionHandler:::process (593 samples, 10.01%)</title><rect x="1071.9" y="1025" width="118.1" height="15.0" fill="rgb(72,220,72)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="1035.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/coy..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>irq_exit (3 samples, 0.05%)</title><rect x="185.5" y="145" width="0.6" height="15.0" fill="rgb(222,82,82)" rx="2" ry="2" />
+<text text-anchor="" x="188.46" y="155.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (1,098 samples, 18.53%)</title><rect x="853.2" y="145" width="218.7" height="15.0" fill="rgb(89,235,89)" rx="2" ry="2" />
+<text text-anchor="" x="856.23" y="155.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegraph/web/FiboCo..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>irq_exit (1 samples, 0.02%)</title><rect x="1185.0" y="81" width="0.2" height="15.0" fill="rgb(252,126,126)" rx="2" ry="2" />
+<text text-anchor="" x="1188.02" y="91.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/springframework/web/servlet/mvc/method/AbstractHandlerMethodAdapter:::handle (5,292 samples, 89.32%)</title><rect x="18.0" y="497" width="1053.9" height="15.0" fill="rgb(54,204,54)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="507.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/springframework/web/servlet/mvc/method/AbstractHandlerMethodAdapter:::handle</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (210 samples, 3.54%)</title><rect x="1030.1" y="129" width="41.8" height="15.0" fill="rgb(76,224,76)" rx="2" ry="2" />
+<text text-anchor="" x="1033.08" y="139.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sam..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>irq_exit (16 samples, 0.27%)</title><rect x="850.0" y="113" width="3.2" height="15.0" fill="rgb(224,85,85)" rx="2" ry="2" />
+<text text-anchor="" x="853.04" y="123.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter (5,292 samples, 89.32%)</title><rect x="18.0" y="705" width="1053.9" height="15.0" fill="rgb(88,234,88)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="715.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>Interpreter (5,885 samples, 99.32%)</title><rect x="18.0" y="1089" width="1172.0" height="15.0" fill="rgb(247,119,119)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="1099.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >Interpreter</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>__do_softirq (3 samples, 0.05%)</title><rect x="185.5" y="97" width="0.6" height="15.0" fill="rgb(222,82,82)" rx="2" ry="2" />
+<text text-anchor="" x="188.46" y="107.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (5,292 samples, 89.32%)</title><rect x="18.0" y="289" width="1053.9" height="15.0" fill="rgb(63,212,63)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="299.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegraph/web/FiboController:::fibonacci</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/catalina/core/ApplicationFilterChain:::internalDoFilter (593 samples, 10.01%)</title><rect x="1071.9" y="561" width="118.1" height="15.0" fill="rgb(98,244,98)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="571.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/cat..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (5,292 samples, 89.32%)</title><rect x="18.0" y="353" width="1053.9" height="15.0" fill="rgb(101,247,101)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="363.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegraph/web/FiboController:::fibonacci</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (138 samples, 2.33%)</title><rect x="1162.5" y="129" width="27.5" height="15.0" fill="rgb(70,218,70)" rx="2" ry="2" />
+<text text-anchor="" x="1165.52" y="139.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >s..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>smp_apic_timer_interrupt (2 samples, 0.03%)</title><rect x="1067.1" y="97" width="0.4" height="15.0" fill="rgb(220,80,80)" rx="2" ry="2" />
+<text text-anchor="" x="1070.12" y="107.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>javax/servlet/http/HttpServlet:::service (5,292 samples, 89.32%)</title><rect x="18.0" y="545" width="1053.9" height="15.0" fill="rgb(93,240,93)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="555.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >javax/servlet/http/HttpServlet:::service</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>sample/flamegraph/web/FiboController:::fibonacci (593 samples, 10.01%)</title><rect x="1071.9" y="417" width="118.1" height="15.0" fill="rgb(59,208,59)" rx="2" ry="2" />
+<text text-anchor="" x="1074.90" y="427.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >sample/flamegr..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>org/apache/tomcat/websocket/server/WsFilter:::doFilter (5,292 samples, 89.32%)</title><rect x="18.0" y="593" width="1053.9" height="15.0" fill="rgb(104,249,104)" rx="2" ry="2" />
+<text text-anchor="" x="20.97" y="603.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >org/apache/tomcat/websocket/server/WsFilter:::doFilter</text>
+</g>
+</svg>

@@ -1,5 +1,9 @@
 .vagrant
-
+*.data
+*.raw
+*.data.old
+*.raw.old
+*.map
 .gradle
 build/
 
