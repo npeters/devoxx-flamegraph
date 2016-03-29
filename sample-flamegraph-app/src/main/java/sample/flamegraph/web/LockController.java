@@ -13,19 +13,19 @@ import java.util.concurrent.atomic.AtomicInteger;
 @RequestMapping("/lock")
 public class LockController {
 
-    private volatile double cpt = 0;
+    private volatile int cpt = 0;
 
-
-    public void doUpdate() throws Exception{
-        cpt = cpt + Math.acos(ThreadLocalRandom.current().nextDouble());
-    }
 
     @RequestMapping(method = RequestMethod.GET)
     @ResponseBody
     public double lock() throws Exception {
           synchronized (this) {
               for (int i=0;i<100_000;i++) {
-                  doUpdate();
+                  if (i % 2 == 0){
+                      cpt = 1;
+                  }else{
+                      cpt = -1;
+                  }
           }
         }
         return cpt;

@@ -70,7 +70,11 @@ my %collapsed;
 
 sub remember_stack {
 	my ($stack, $time) = @_;
-  $collapsed{$stack} += $time;
+if(defined $time){
+	$collapsed{$stack} += $time;
+ }else{
+		$collapsed{$stack} = 0;
+	}
 }
 my $annotate_kernel = 0; # put an annotation on kernel function
 my $include_pname = 1;	# include process names in stacks
@@ -242,5 +246,8 @@ while (defined($_ = <>)) {
 
 foreach my $k (sort { $a cmp $b } keys %collapsed) {
   my $tms =  $collapsed{$k} / 1000000;
-	print "$k $tms\n";
+  if ( ! $k eq "" ){
+  	print "$k $tms\n";
+  }
+
 }

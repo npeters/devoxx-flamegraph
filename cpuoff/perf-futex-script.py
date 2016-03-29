@@ -19,7 +19,7 @@ from Util import *
 
 
 def trace_begin():
-    print ""
+    print "fdsfqsdf"
 
 
 
@@ -36,13 +36,14 @@ def syscalls__sys_enter_futex(event_name, context, common_cpu,
     common_callchain, nr, uaddr, op, val,
     utime, uaddr2, val3):
 
-        cmd = op & FUTEX_CMD_MASK
-        if cmd != FUTEX_WAIT:
-            return # we don't care about originators of WAKE events
+        # cmd = op & FUTEX_CMD_MASK
+        # if cmd != FUTEX_WAIT:
+        #     return # we don't care about originators of WAKE events
 
         process_names[tid] = common_comm
         thread_thislock[tid] = uaddr
         thread_blocktime[tid] = nsecs(common_secs, common_nsecs)
+        #print "enter "+str(tid)
         #thread_callchain[(tid,uaddr)] = common_callchain
 
         # print_header(event_name, common_cpu, common_secs, common_nsecs,
@@ -71,20 +72,23 @@ def syscalls__sys_exit_futex(event_name, context, common_cpu,
     # print_header(event_name, common_cpu, common_secs, common_nsecs,
     #         tid, common_comm)
 
-
     if thread_blocktime.has_key(tid):
         elapsed = nsecs(common_secs, common_nsecs) - thread_blocktime[tid]
-        add_stats(lock_waits, (tid, thread_thislock[tid]), elapsed)
+        #add_stats(lock_waits, (tid, thread_thislock[tid]), elapsed)
         del thread_blocktime[tid]
         del thread_thislock[tid]
 
         print "%s %d %d" % (process_names[tid], tid, elapsed )
-        for node in common_callchain:
-            if  'sym' in node:
-                print "\t%x  %s ()" % (node['ip'], node['sym']['name'])
-            # else:
-            #     print "\t[%x]" % (node['ip'])
-        print ""
+
+    if thread_blocktime.has_key(tid):
+        print "in"
+    print "exit "+ str(tid)
+    for node in common_callchain:
+        if  'sym' in node:
+            print "\t%x  %s ()" % (node['ip'], node['sym']['name'])
+        else:
+              print "\t[%x]" % (node['ip'])
+    print ""
 
 	#
     # print "nr=%d, ret=%d" % \
@@ -99,7 +103,7 @@ def syscalls__sys_exit_futex(event_name, context, common_cpu,
     # print "\n"
 
 def trace_end():
-    print ""
+    print "end"
 # print dans le cas d un aggrega
     # for (tid, lock) in lock_waits:
     #     min, max, avg, count = lock_waits[tid, lock]

@@ -62,6 +62,11 @@ bootRun {
 	jvmArgs = [
  	"-XX:+PreserveFramePointer"
 	,"-Djava.security.egd=file:/dev/./urandom"
+
+//	,"-XX:+UnlockDiagnosticVMOptions"
+//	,"-XX:+PrintBiasedLockingStatistics"
+//	,"-XX:+PrintSafepointStatistics"
+
 //	,"-XX:+PrintSafepointStatistics"
 //	,"-XX:PrintSafepointStatisticsCount=1"
 //	 ,"-XX:MaxInlineSize=15"
