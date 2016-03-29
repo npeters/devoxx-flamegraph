@@ -25,3 +25,4 @@ wrk -t10 -c20 -d30s http://192.168.33.10:8080/fibo/10
 TODO
 - url /proxy
 - cpuoff/cpuoff.sh
+- SERVER_PORT=9000 gradle bootRun

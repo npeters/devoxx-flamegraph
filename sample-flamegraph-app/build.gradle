@@ -19,13 +19,12 @@ apply plugin: 'java'
 apply plugin: 'eclipse'
 apply plugin: 'idea'
 apply plugin: 'spring-boot'
-apply from: 'gatling.gradle'
 
 sourceCompatibility = 1.8
 targetCompatibility = 1.8
 
 jar {
-	baseName = 'sample-flamegraph'
+	baseName = 'sample-flamegraph-app'
 	version =  '0.0.0'
 }
 
@@ -55,11 +54,18 @@ dependencies {
 springBoot {
 	customConfiguration = "insecure"
 	executable = true
+	mainClass = "sample.flamegraph.SampleFlamegraphApplication"
 }
 
 bootRun {
 	jvmArgs = [
  	"-XX:+PreserveFramePointer"
+	,"-Djava.security.egd=file:/dev/./urandom"
+
+//	,"-XX:+UnlockDiagnosticVMOptions"
+//	,"-XX:+PrintBiasedLockingStatistics"
+//	,"-XX:+PrintSafepointStatistics"
+
 //	,"-XX:+PrintSafepointStatistics"
 //	,"-XX:PrintSafepointStatisticsCount=1"
 //	 ,"-XX:MaxInlineSize=15"
