@@ -11,7 +11,9 @@
  yum install -y perf
 
 #la jdk 1.8.66
- yum install -y  java-1.8.0-openjdk-devel
+yum install -y  java-1.8.0-openjdk-devel
+# les debuginfo (les symbols) de openjdk
+yum install --enablerepo=debuginfo -y java-1.8.0-openjdk-debuginfo
 
 #Projet FlameGraph de brendangregg
 [ -d /opt/FlameGraph ] ||  git clone https://github.com/brendangregg/FlameGraph /opt/FlameGraph
