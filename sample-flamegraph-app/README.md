@@ -1,7 +1,7 @@
 # Application Sample
 
 ## Setup
-Il faut installer sur la machine hôte wrk https://github.com/wg/wrk/wiki/Installing-Wrk-on-Linux
+Installer sur la machine hôte wrk https://github.com/wg/wrk/wiki/Installing-Wrk-on-Linux
 La VM vagrant démarre avec un réseaux privé sur l'ip 192.168.33.10
 
 
@@ -9,7 +9,7 @@ La VM vagrant démarre avec un réseaux privé sur l'ip 192.168.33.10
 
 - Démarrage de l'application de sample
 ```
-[vagrant@localhost flamegraph-sample] gradle bootRun
+[vagrant@localhost flamegraph-sample-app] gradle bootRun
 ```
 -  Démarrage de tire de charge depuis la machine hôte
 ```
