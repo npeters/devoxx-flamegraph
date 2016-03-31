@@ -7,22 +7,37 @@ La VM vagrant démarre avec un réseaux privé sur l'ip 192.168.33.10
 
 ## Exemple 1 - fibo
 
-- Démarrage de l'application de sample
+- Démarrer l'application de sample
 ```
 [vagrant@localhost flamegraph-sample-app] gradle bootRun
 ```
--  Démarrage de tire de charge depuis la machine hôte
+- Démarrer le tire de charge depuis la machine hôte
 ```
 wrk -t10 -c20 -d30s http://192.168.33.10:8080/fibo/10
 ```
-- Flamegraph
+- Génerrer le Flamegraph
 ```
-[vagrant@localhost flamegraph-sample] sudo perf-java-flames pid
+[vagrant@localhost flamegraph-sample-app] perf-java-flames pid
 ```
 
-## Exemple 2 - cpuoff
+## Exemple 2 - offcpu
 
-TODO
-- url /proxy
-- cpuoff/cpuoff.sh
-- SERVER_PORT=9000 gradle bootRun
+L'application génére un appelle à un service distant. 
+Le offcpu permet de reperer la latence 
+
+- Démarrer l'application de sample
+```
+[vagrant@localhost flamegraph-sample-app] gradle bootRun
+```
+- Démarrer l'application de sample sur la machine hôte
+```
+SERVER_PORT=9000 gradle bootRun
+```
+- Démarrer le tire de charge depuis la machine hôte
+```
+ wrk -L   -t10 -c20 -d5m -R10 http://192.168.33.10:8080/proxy
+```
+- Génerrer le Flamegraph
+```
+[vagrant@localhost vagrant] ./offcpu.sh
+```

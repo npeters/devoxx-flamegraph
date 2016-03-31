@@ -5,7 +5,7 @@
 application.pid
 build/
 target/
-
+*.pid
 # Ignore Gradle GUI config
 gradle-app.setting
 

@@ -9,20 +9,18 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.concurrent.ThreadLocalRandom;
 
+/**
+ * wait 50ms before return OK
+ */
 @Controller
 @RequestMapping("/remote")
 public class RemoteController {
 
-    int WAIT = 5;
     @RequestMapping(method = RequestMethod.GET)
     @ResponseBody
     public String remote()  throws Exception{
-
-       //if  (ThreadLocalRandom.current().nextInt() % 10 == 0 ){
-           Thread.sleep(WAIT*10);
-       //}
+        Thread.sleep(50);
         return "Ok";
-
     }
 
 
