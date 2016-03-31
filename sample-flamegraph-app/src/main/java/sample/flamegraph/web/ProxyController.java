@@ -8,6 +8,9 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import java.net.HttpURLConnection;
 import java.net.URL;
 
+/**
+ * Call a remote service and return the status code
+ */
 @Controller
 @RequestMapping("/proxy")
 public class ProxyController {
