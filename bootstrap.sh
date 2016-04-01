@@ -7,7 +7,7 @@
 # les debuginfo (les symbols) du kernel linux et de glibc
  yum install --enablerepo=base-debuginfo -y kernel-debuginfo.x86_64  kernel-debuginfo-common-x86_64.x86_64 kernel-tools-debuginfo.x86_64  glibc-debuginfo
 
-# perf est un outil fournie dans le kernel linux pour capturer les d'evenements system
+# perf est un outil fourni dans le kernel linux pour capturer les evenements system
  yum install -y perf
 
 #la jdk 1.8.66
@@ -19,7 +19,7 @@ yum install --enablerepo=debuginfo -y java-1.8.0-openjdk-debuginfo
 [ -d /opt/FlameGraph ] ||  git clone https://github.com/brendangregg/FlameGraph /opt/FlameGraph
 
 # Projet perf-map-agent
-# agent java permettant de d'extraire les symbols de la JVM
+# agent java permettant d'extraire les symbols de la JVM
 [ -d /opt/perf-map-agent ] ||  git clone https://github.com/jrudolph/perf-map-agent /opt/perf-map-agent
  yum -y install cmake gcc-c++
 cd /opt/perf-map-agent
@@ -27,11 +27,24 @@ cd /opt/perf-map-agent
 export JAVA_HOME=/etc/alternatives/java_sdk
 cmake .
 make
-# instalation d'un ensemble de commande dont "perf-java-flames"
+# installation d'un ensemble de commandes dont "perf-java-flames"
 bin/create-links-in /usr/bin
 
 
-
+# Gradle
 [ -f /tmp/gradle-2.12-all.zip ] ||  wget -O /tmp/gradle-2.12-all.zip https://services.gradle.org/distributions/gradle-2.12-all.zip
 cd /opt
 unzip /tmp/gradle-2.12-all.zip
+
+# Docker
+sudo tee /etc/yum.repos.d/docker.repo <<-'EOF'
+[dockerrepo]
+name=Docker Repository
+baseurl=https://yum.dockerproject.org/repo/main/centos/$releasever/
+enabled=1
+gpgcheck=1
+gpgkey=https://yum.dockerproject.org/gpg
+EOF
+
+sudo yum install -y docker-engine
+sudo service docker start
