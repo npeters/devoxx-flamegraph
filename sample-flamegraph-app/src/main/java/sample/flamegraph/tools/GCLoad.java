@@ -1,6 +1,10 @@
 package sample.flamegraph.tools;
 
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.OpenOption;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.text.*;
 import java.util.concurrent.*;
@@ -12,7 +16,7 @@ public class GCLoad {
     static int threadNum = 1;
     static int duration = 300; // seconds;  Program will exit after duration of seconds.
 
-    static int ReferenceSize = 1024 * 10;  // each reference object size;
+    static int referenceSize = 1024 * 5;  // each reference object size;
     static int countDownSize = 1000 * 100;
     static int eachRemoveSize = 1000 * 50; // remove # of elements each time.
 
@@ -25,8 +29,10 @@ public class GCLoad {
     public static void main(String[] args)
             throws IOException {
 
+        String pid = getPid();
+        System.out.println("App pid: " + pid);
+        Files.write(Paths.get("/tmp/gcload.pid"),Collections.singletonList(pid), StandardOpenOption.CREATE);
 
-        System.out.println("App pid:" + getPid());
 
         if (args.length > 0) {
             duration = Integer.parseInt(args[0]);
@@ -75,9 +81,9 @@ class LoadThread extends Thread {
 
                 Date dNow = new Date();
 
-                System.out.println(ft.format(dNow) + " finished Units (1K) = " + finishedUnit);
+                System.out.println(ft.format(dNow) + " finished Units = " + finishedUnit);
             }
-            char[] srcArray = new char[GCLoad.ReferenceSize];
+            char[] srcArray = new char[GCLoad.referenceSize];
             String emptystr = new String(srcArray);
             String str = emptystr.replace('\0', 'a');
             q.add(str);

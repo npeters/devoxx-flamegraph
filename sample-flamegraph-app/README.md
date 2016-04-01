@@ -17,7 +17,19 @@ wrk -t10 -c20 -d30s http://192.168.33.10:8080/fibo/10
 ```
 - Génerrer le Flamegraph
 ```
-[vagrant@localhost flamegraph-sample-app] perf-java-flames pid
+[vagrant@localhost flamegraph-sample-app] perf-java-flames $(cat application.ini)
+```
+## Exemple 2 - Garbage Collection
+L'application gcload instancie beaucoup object afin de générer beaucoup de GC 
+
+- Démarrer l'application gcload
+```
+[vagrant@localhost /vagran] ./gcload-run.sh
+```
+
+- Génerrer le Flamegraph
+```
+[vagrant@localhost /vagran] perf-java-flames $(cat /tmp/gcload.pid)
 ```
 
 ## Exemple 2 - offcpu
