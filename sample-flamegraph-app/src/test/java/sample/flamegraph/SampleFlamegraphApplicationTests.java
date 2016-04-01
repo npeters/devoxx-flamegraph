@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @RunWith(SpringJUnit4ClassRunner.class)
 @SpringApplicationConfiguration(SampleFlamegraphApplication.class)
 @WebIntegrationTest(randomPort = true)
-public class SampleHateoasApplicationTests {
+public class SampleFlamegraphApplicationTests {
 
 	@Value("${local.server.port}")
 	private int port;
