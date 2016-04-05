@@ -1,0 +1,2 @@
+#!/bin/env bash
+jps -l  | grep sample | awk '{print $1}'
