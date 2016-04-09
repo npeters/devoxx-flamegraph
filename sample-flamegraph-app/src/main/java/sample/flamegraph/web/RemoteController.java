@@ -1,9 +1,7 @@
 package sample.flamegraph.web;
 
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestMethod;
-import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.*;
 
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -22,6 +20,17 @@ public class RemoteController {
         Thread.sleep(50);
         return "Ok";
     }
+
+
+    @RequestMapping(path = "/open", method = RequestMethod.GET)
+    @ResponseBody
+    public String open(@RequestParam("file") String file)  throws Exception{
+
+         new ProcessBuilder().command("google-chrome",  file).start();
+
+        return "Ok";
+    }
+
 
 
 }
