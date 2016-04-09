@@ -46,6 +46,7 @@ dependencies {
 	compile("org.springframework.boot:spring-boot-starter-hateoas")
 	compile("org.springframework.boot:spring-boot-starter-web")
 	compile("org.apache.httpcomponents:httpclient:4.5.2")
+	compile( "com.ning:async-http-client:1.9.38")
 	testCompile("org.springframework.boot:spring-boot-starter-test")
 
 	insecure configurations.runtime

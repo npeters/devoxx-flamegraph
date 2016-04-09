@@ -15,13 +15,13 @@ import java.net.URL;
 @RequestMapping("/proxy")
 public class ProxyController {
 
-    private static String REMOTE_SERVER = "192.168.33.1";
+    private static String REMOTE_URL = System.getenv("REMOTE_URL");
 
     @RequestMapping(method = RequestMethod.GET)
     @ResponseBody
     public int proxy()  throws Exception{
 
-        String url = String.format("http://%s:9000/remote", REMOTE_SERVER);
+        String url = String.format("%s/remote", REMOTE_URL);
         URL obj = new URL(url);
         HttpURLConnection con = (HttpURLConnection) obj.openConnection();
         con.setRequestMethod("GET");
