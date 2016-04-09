@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+sudo ln -s /vagrant/env.sh /etc/profile.d/env.sh 
+. /etc/profile.d/env.sh
+
+
  yum install -y git unzip
 
 # les sources du kernel linux et de glibc
@@ -7,8 +11,8 @@
 # les debuginfo (les symbols) du kernel linux et de glibc
  yum install --enablerepo=base-debuginfo -y kernel-debuginfo.x86_64  kernel-debuginfo-common-x86_64.x86_64 kernel-tools-debuginfo.x86_64  glibc-debuginfo
 
-# perf est un outil fourni dans le kernel linux pour capturer les evenements system
- yum install -y perf
+# perf est un outil fourni dans le kernel linux pour capturer les d'evenements system
+ yum install -y perf audit-libs-python
 
 #la jdk 1.8.66
 yum install -y  java-1.8.0-openjdk-devel
