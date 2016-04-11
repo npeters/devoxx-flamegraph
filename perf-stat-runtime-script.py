@@ -30,7 +30,7 @@ def sched__sched_stat_runtime(event_name, context, common_cpu,
     if (thread_blocktime.has_key(tid)):
         delta = current_time - thread_blocktime[tid]
         off_cpu = abs(delta - runtime)
-        if ( off_cpu > 10*NSECS_PER_MSEC ):
+        if ( off_cpu > 5*NSECS_PER_MSEC ):
             print "java %s %s" % (tid, nsecs_to_str(off_cpu))
             for node in common_callchain:
                 if 'sym' in node:

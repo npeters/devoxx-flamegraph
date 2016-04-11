@@ -50,7 +50,7 @@ public class LockController {
                         long start = System.currentTimeMillis();
                         lock.myLock();
                         long duration = System.currentTimeMillis() - start;
-                        System.out.println(String.format("%s", duration));
+                       // System.out.println(String.format("%s", duration));
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
