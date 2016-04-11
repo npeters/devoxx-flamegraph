@@ -1,2 +1,2 @@
 file=$(readlink -f  $1)
-curl -s $REMOTE_HOST/remote/open?file=$file
+curl -s $REMOTE_URL/remote/open?file=$file

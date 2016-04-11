@@ -54,7 +54,7 @@ class LoadThread extends Thread {
     }
 
     public void run() {
-        AbstractQueue<String> q = new ArrayBlockingQueue<String>(GCLoad.countDownSize);
+        Queue<String> q = new ArrayBlockingQueue<String>(GCLoad.countDownSize);
 
         finishedUnit = 0;
         long prevTime = timeZero;
