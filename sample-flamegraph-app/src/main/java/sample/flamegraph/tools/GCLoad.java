@@ -54,16 +54,16 @@ class LoadThread extends Thread {
     }
 
     public void run() {
-        Queue<String> q = new ArrayBlockingQueue<String>(GCLoad.countDownSize);
+        Queue<String> queue = new ArrayBlockingQueue<String>(GCLoad.countDownSize);
 
         finishedUnit = 0;
         long prevTime = timeZero;
         SimpleDateFormat ft = new SimpleDateFormat("yyyy-MM-dd hh:mm:ss.SSSSS");
         for (int i = 0; ; i = i + 1) {
             // Simulate object use to force promotion into OldGen and then GC
-            if (q.size() >= GCLoad.countDownSize) {
+            if (queue.size() >= GCLoad.countDownSize) {
                 for (int j = 0; j < GCLoad.eachRemoveSize; j++) {
-                    q.remove();
+                    queue.remove();
                 }
                 finishedUnit++;
 
@@ -85,7 +85,7 @@ class LoadThread extends Thread {
             char[] srcArray = new char[GCLoad.referenceSize];
             String emptystr = new String(srcArray);
             String str = emptystr.replace('\0', 'a');
-            q.add(str);
+            queue.add(str);
         }
     }
 }
